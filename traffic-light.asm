@@ -1,4 +1,3 @@
-
 ; --- constantes do sistema ---
 dados_tempo    equ     28h     ; endereço para temporizador
 tam_display    equ     4       ; dígitos no display
@@ -34,10 +33,7 @@ tabela_numeros:
     DB 080h  ; 8
     DB 090h  ; 9
 
-
-
 ; inicialização do sistema
-
     org     0000h
     ljmp    setup
 
@@ -90,7 +86,6 @@ main_loop:
     call    ciclo_vermelho
     sjmp    main_loop
 
-
 ; rotinas de controle de tráfego para verificar se o botão é aceso no momento certo 
 ciclo_verde:
     setb    botao_carro
@@ -118,6 +113,7 @@ verde_longo:
 ciclo_amarelo:
     clr     semaforo_amarelo
     mov     dados_tempo+0, #3
+    mov     dados_tempo+1, #0  ; garante que mostra só 3
     call    conta_3s
     setb    semaforo_amarelo
     ret
@@ -127,19 +123,22 @@ ciclo_vermelho:
     
     jb      emergencia, vermelho_emergente
 
-    ; tempo normal 7s
+    ; tempo normal 7s (corrigido para mostrar 7 segundos)
     clr     semaforo_vermelho
     mov     dados_tempo+0, #7
+    mov     dados_tempo+1, #0  ; garante que mostra só 7
     call    conta_7s
     setb    semaforo_vermelho
     ret
 
 vermelho_emergente:
-    ; emergência 15s
+    ; emergência 15s (corrigido para mostrar 15 segundos)
     clr     semaforo_vermelho
     setb    led_emerg
     mov     dados_tempo+0, #5
-    mov     dados_tempo+1, #1
+    mov     dados_tempo+1, #1  ; mostra 15 (1-5)
+    mov     dados_tempo+2, #0  ; zera outros digitos
+    mov     dados_tempo+3, #0
     call    conta_15s
     setb    semaforo_vermelho
     clr     led_emerg
@@ -152,9 +151,7 @@ apaga_luzes:
     setb    semaforo_vermelho
     ret
 
-
 ; tratamento de interrupções
-
 conta_carro:
     jb      semaforo_vermelho, fim_contagem
     call    soma_veiculo
@@ -218,9 +215,7 @@ contagem:
     jnz     contagem
     ret
 
-
 ; manipulação do display 
-
 atualiza_display:
     push    acc
     push    psw
@@ -260,7 +255,6 @@ delay_loop:
     pop     acc
     ret
 
-
 ; rotina de decremento de tempo
 diminui_tempo:
     push    acc
@@ -291,19 +285,16 @@ fim_contador:
     ret
 
 ;delays
-
 espera_1s:
     mov     TMOD, #01h
-    mov     TH0, #0FFh
+    mov     TH0, #0FFh    ; mantido como estava (não mudei o timer)
     mov     TL0, #084h
     setb    TR0
 
 aguarda:
     jnb     TF0, aguarda
     clr     TF0
-    setb    led_emerg
-    ret
-
+    ret                   ; removi o setb led_emerg que causava o piscar
 
 ; fimmmmm
     end
