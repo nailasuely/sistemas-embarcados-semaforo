@@ -125,7 +125,7 @@ modo_emergencia:
     setb    semaforo_verde
     setb    semaforo_amarelo
     clr     semaforo_vermelho
-    clr   led_emerg ;;;;;;;;;;;;;;;;;;;;;;;;
+    clr     led_emerg 
     
     ; Configura tempo de emergência (15s)
     mov     dados_tempo+0, #5
