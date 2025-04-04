@@ -5,7 +5,7 @@ cont_veiculos  equ     45h     ; contagem de carros
 
 ; --- flags de controle ---
 emergencia     bit     24h.0   ; flag de emergência
-muitos_carros  bit     24h.1   ; flag de mt carro
+muitos_carros  bit     24h.1   ; flag de muitos carros
 
 ; --- configuração de hardware ---
 semaforo_verde   equ    P1.0    ; luz verde
@@ -80,86 +80,140 @@ setup:
 ; ==============================================
 main_loop:
     call    apaga_luzes
-    
-    ; Verifica emergência antes de cada ciclo
     jb      emergencia, modo_emergencia
     
-    call    ciclo_verde
-    call    ciclo_amarelo
-    jb      emergencia, modo_emergencia
-    call    ciclo_vermelho_normal
-    sjmp    main_loop
-
-modo_emergencia:
-    call    vermelho_emergente
-    sjmp    main_loop
-
-; rotinas de controle de tráfego
-ciclo_verde:
-    setb    botao_carro
-    
-    jb      muitos_carros, verde_longo
-
-    ; tempo padrão 10s
+    ; Ciclo Verde
     clr     semaforo_verde
+    setb    botao_carro
+    jb      muitos_carros, verde_longo
     mov     dados_tempo+0, #0
     mov     dados_tempo+1, #1
-    call    conta_10s
-    setb    semaforo_verde
-    ret
+    call    conta_tempo_verde
+    sjmp    fim_verde
 
 verde_longo:
-    ; tempo estendido 15s
-    clr     semaforo_verde
+    ; Verde estendido (15s)
     mov     dados_tempo+0, #5
     mov     dados_tempo+1, #1
-    call    conta_15s
-    setb    semaforo_verde
+    call    conta_tempo_verde_longo
     clr     muitos_carros
-    setb     led_trafego 
-    ret
+    setb    led_trafego
 
-ciclo_amarelo:
+fim_verde:
+    setb    semaforo_verde
+    jb      emergencia, modo_emergencia
+    
+    ; Ciclo Amarelo
     clr     semaforo_amarelo
     mov     dados_tempo+0, #3
     mov     dados_tempo+1, #0
-    call    conta_3s
+    call    conta_tempo_amarelo
     setb    semaforo_amarelo
-    ret
-
-ciclo_vermelho_normal:
-    ; tempo normal 7s
+    jb      emergencia, modo_emergencia
+    
+    ; Ciclo Vermelho normal
     clr     semaforo_vermelho
     mov     dados_tempo+0, #7
     mov     dados_tempo+1, #0
-    call    conta_7s
+    call    conta_tempo_vermelho
     setb    semaforo_vermelho
-    ret
+    
+    ljmp    main_loop
 
-vermelho_emergente:
-    ; emergência 15s
+modo_emergencia:
+    ; Força todas as luzes para vermelho
+    setb    semaforo_verde
+    setb    semaforo_amarelo
     clr     semaforo_vermelho
-    ;setb    led_emerg
+    clr   led_emerg ;;;;;;;;;;;;;;;;;;;;;;;;
+    
+    ; Configura tempo de emergência (15s)
     mov     dados_tempo+0, #5
     mov     dados_tempo+1, #1
-    call    conta_15s
+    call    conta_tempo_emergencia
+    
+    ; Finaliza emergência
     setb    semaforo_vermelho
     setb    led_emerg
     clr     emergencia
+    ljmp    main_loop
+
+; ==============================================
+; Rotinas de temporização
+; ==============================================
+conta_tempo_verde:
+    call    atualiza_display
+    call    espera_1s
+    call    diminui_tempo
+    jb      emergencia, fim_contagem_verde
+    jb      muitos_carros, verde_longo  ; Verifica se a flag foi ativada durante a contagem
+    mov     A, dados_tempo+0
+    orl     A, dados_tempo+1
+    jnz     conta_tempo_verde
+fim_contagem_verde:
     ret
 
+conta_tempo_verde_longo:
+    call    atualiza_display
+    call    espera_1s
+    call    diminui_tempo
+    jb      emergencia, fim_contagem_verde_longo
+    mov     A, dados_tempo+0
+    orl     A, dados_tempo+1
+    jnz     conta_tempo_verde_longo
+fim_contagem_verde_longo:
+    ret
+
+conta_tempo_amarelo:
+    call    atualiza_display
+    call    espera_1s
+    call    diminui_tempo
+    jb      emergencia, fim_contagem_amarelo
+    mov     A, dados_tempo+0
+    orl     A, dados_tempo+1
+    jnz     conta_tempo_amarelo
+fim_contagem_amarelo:
+    ret
+
+conta_tempo_vermelho:
+    call    atualiza_display
+    call    espera_1s
+    call    diminui_tempo
+    jb      emergencia, fim_contagem_vermelho
+    mov     A, dados_tempo+0
+    orl     A, dados_tempo+1
+    jnz     conta_tempo_vermelho
+fim_contagem_vermelho:
+    ret
+
+conta_tempo_emergencia:
+    call    atualiza_display
+    call    espera_1s
+    call    diminui_tempo
+    mov     A, dados_tempo+0
+    orl     A, dados_tempo+1
+    jnz     conta_tempo_emergencia
+    ret
+
+; ==============================================
+; Funções auxiliares
+; ==============================================
 apaga_luzes:
     setb    semaforo_verde
     setb    semaforo_amarelo
     setb    semaforo_vermelho
     ret
 
-; tratamento de interrupções
 conta_carro:
     push    acc
     push    psw
     jnb      semaforo_vermelho, fim_contagem
-    call    soma_veiculo
+    mov     A, cont_veiculos
+    inc     A
+    mov     cont_veiculos, A
+    cjne    A, #6, fim_contagem
+    setb    muitos_carros
+    clr     led_trafego
 fim_contagem:
     pop     psw
     pop     acc
@@ -169,64 +223,39 @@ ativa_emergencia:
     push    acc
     push    psw
     setb    emergencia
-    clr     led_emerg
+    ; Força mudança imediata para vermelho
+    setb    semaforo_verde
+    setb    semaforo_amarelo
+    clr     semaforo_vermelho
+    clr     led_emerg   
     pop     psw
     pop     acc
     reti
 
-soma_veiculo:
+diminui_tempo:
     push    acc
-    mov     A, cont_veiculos
-    inc     A
-    mov     cont_veiculos, A
     
-    cjne    A, #6, fim_soma
-    setb    muitos_carros
-    CLR    led_trafego
-fim_soma:
+    dec     dados_tempo+0
+    mov     A, dados_tempo+0
+    cjne    A, #0FFh, fim_contador
+    
+    mov     dados_tempo+0, #9
+    dec     dados_tempo+1
+    mov     A, dados_tempo+1
+    cjne    A, #0FFh, fim_contador
+    
+    mov     dados_tempo+1, #9
+    dec     dados_tempo+2
+    mov     A, dados_tempo+2
+    cjne    A, #0FFh, fim_contador
+    
+    mov     dados_tempo+2, #9
+    dec     dados_tempo+3
+
+fim_contador:
     pop     acc
     ret
 
-; ==============================================
-; controle de temporização
-; ==============================================
-conta_3s:
-    mov     dados_tempo+0, #3
-    mov     dados_tempo+1, #0
-    call    contagem
-    ret
-
-conta_7s:
-    mov     dados_tempo+0, #7
-    mov     dados_tempo+1, #0
-    call    contagem
-    ret
-
-conta_10s:
-    mov     dados_tempo+0, #0
-    mov     dados_tempo+1, #1
-    call    contagem
-    ret
-
-conta_15s:
-    mov     dados_tempo+0, #5
-    mov     dados_tempo+1, #1
-    call    contagem
-    ret
-
-contagem:
-    call    atualiza_display
-    call    espera_1s
-    call    diminui_tempo
-    
-    mov     A, dados_tempo+0
-    orl     A, dados_tempo+1
-    orl     A, dados_tempo+2
-    orl     A, dados_tempo+3
-    jnz     contagem
-    ret
-
-; manipulação do display
 atualiza_display:
     push    acc
     push    psw
@@ -256,44 +285,21 @@ mostra_numero:
 delay_pequeno:
     push    acc
     mov     A, #50
+
 delay_loop:
     djnz    acc, delay_loop
-    pop     acc
-    ret
-
-diminui_tempo:
-    push    acc
-    
-    dec     dados_tempo+0
-    mov     A, dados_tempo+0
-    cjne    A, #0FFh, fim_contador
-    
-    mov     dados_tempo+0, #9
-    dec     dados_tempo+1
-    mov     A, dados_tempo+1
-    cjne    A, #0FFh, fim_contador
-    
-    mov     dados_tempo+1, #9
-    dec     dados_tempo+2
-    mov     A, dados_tempo+2
-    cjne    A, #0FFh, fim_contador
-    
-    mov     dados_tempo+2, #9
-    dec     dados_tempo+3
-
-fim_contador:
     pop     acc
     ret
 
 espera_1s:
     mov     TMOD, #01h
     mov     TH0, #0FFh
-    mov     TL0, #084h
+    mov     TL0, #084h  
     setb    TR0
 
 aguarda:
     jnb     TF0, aguarda
     clr     TF0
     ret
-; fimmmm
+
 end
