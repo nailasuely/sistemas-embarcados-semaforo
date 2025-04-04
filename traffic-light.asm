@@ -14,11 +14,11 @@ semaforo_vermelho equ   P1.2    ; luz vermelha
 led_emerg        equ    P1.3    ; indicador
 led_trafego      equ    P1.4    ; alerta tráfego
 
-botao_carro      equ    P2.0    ; sensor veículos
-botao_emerg      equ    P2.1    ; botão emergência
+botao_carro      equ    P3.2    ; sensor veículos
+botao_emerg      equ    P3.3    ; botão emergência
 
 display_seg      equ    P0      ; segmentos
-display_dig      equ    P3      ; dígitos
+display_dig      equ    P2      ; dígitos
 
 ; --- tabela de conversão ---
 tabela_numeros:
@@ -74,19 +74,27 @@ setup:
 
     ; configura ponteiros
     mov     DPTR, #tabela_numeros
-    mov     R5, #11111110b   ; máscara inicial para dígito 1
 
 ; ==============================================
 ; loop de operação principal
 ; ==============================================
 main_loop:
     call    apaga_luzes
+    
+    ; Verifica emergência antes de cada ciclo
+    jb      emergencia, modo_emergencia
+    
     call    ciclo_verde
     call    ciclo_amarelo
-    call    ciclo_vermelho
+    jb      emergencia, modo_emergencia
+    call    ciclo_vermelho_normal
     sjmp    main_loop
 
-; rotinas de controle de tráfego para verificar se o botão é aceso no momento certo 
+modo_emergencia:
+    call    vermelho_emergente
+    sjmp    main_loop
+
+; rotinas de controle de tráfego
 ciclo_verde:
     setb    botao_carro
     
@@ -108,40 +116,35 @@ verde_longo:
     call    conta_15s
     setb    semaforo_verde
     clr     muitos_carros
+    setb     led_trafego 
     ret
 
 ciclo_amarelo:
     clr     semaforo_amarelo
     mov     dados_tempo+0, #3
-    mov     dados_tempo+1, #0  ; garante que mostra só 3
+    mov     dados_tempo+1, #0
     call    conta_3s
     setb    semaforo_amarelo
     ret
 
-ciclo_vermelho:
-    setb    botao_emerg
-    
-    jb      emergencia, vermelho_emergente
-
-    ; tempo normal 7s (corrigido para mostrar 7 segundos)
+ciclo_vermelho_normal:
+    ; tempo normal 7s
     clr     semaforo_vermelho
     mov     dados_tempo+0, #7
-    mov     dados_tempo+1, #0  ; garante que mostra só 7
+    mov     dados_tempo+1, #0
     call    conta_7s
     setb    semaforo_vermelho
     ret
 
 vermelho_emergente:
-    ; emergência 15s (corrigido para mostrar 15 segundos)
+    ; emergência 15s
     clr     semaforo_vermelho
-    setb    led_emerg
+    ;setb    led_emerg
     mov     dados_tempo+0, #5
-    mov     dados_tempo+1, #1  ; mostra 15 (1-5)
-    mov     dados_tempo+2, #0  ; zera outros digitos
-    mov     dados_tempo+3, #0
+    mov     dados_tempo+1, #1
     call    conta_15s
     setb    semaforo_vermelho
-    clr     led_emerg
+    setb    led_emerg
     clr     emergencia
     ret
 
@@ -153,14 +156,22 @@ apaga_luzes:
 
 ; tratamento de interrupções
 conta_carro:
-    jb      semaforo_vermelho, fim_contagem
+    push    acc
+    push    psw
+    jnb      semaforo_vermelho, fim_contagem
     call    soma_veiculo
 fim_contagem:
+    pop     psw
+    pop     acc
     reti
 
 ativa_emergencia:
+    push    acc
+    push    psw
     setb    emergencia
     clr     led_emerg
+    pop     psw
+    pop     acc
     reti
 
 soma_veiculo:
@@ -169,9 +180,9 @@ soma_veiculo:
     inc     A
     mov     cont_veiculos, A
     
-    cjne    A, #5, fim_soma
+    cjne    A, #6, fim_soma
     setb    muitos_carros
-    clr     led_trafego
+    CLR    led_trafego
 fim_soma:
     pop     acc
     ret
@@ -215,38 +226,33 @@ contagem:
     jnz     contagem
     ret
 
-; manipulação do display 
+; manipulação do display
 atualiza_display:
     push    acc
     push    psw
-    mov     R0, #dados_tempo       ; começa do primeiro dígito
-    mov     R5, #11111110b         ; máscara inicial para dígito 1
+    mov     R0, #dados_tempo
+    mov     R5, #11111110b
     
 mostra_numero:
-    mov     A, @R0                 ; pega valor do dígito
-    movc    A, @A+DPTR             ; converte para 7 segmentos
-    mov     display_seg, A         ; envia para segmentos
-    mov     display_dig, R5        ; ativa dígito
+    mov     A, @R0
+    movc    A, @A+DPTR
+    mov     display_seg, A
+    mov     display_dig, R5
     
-    ; pequeno delay para persistência
     call    delay_pequeno
     
-    ; prepara próximo dígito
     inc     R0
     mov     A, R5
     rl      A
     mov     R5, A
     
-    ; verifica se terminou todos dígitos
     cjne    R0, #dados_tempo+tam_display, mostra_numero
     
-    ; desliga todos dígitos no final
     mov     display_dig, #0FFh
     pop     psw
     pop     acc
     ret
 
-; novo delay para persistência do display
 delay_pequeno:
     push    acc
     mov     A, #50
@@ -255,28 +261,23 @@ delay_loop:
     pop     acc
     ret
 
-; rotina de decremento de tempo
 diminui_tempo:
     push    acc
     
-    ; decrementa unidade primeiro
     dec     dados_tempo+0
     mov     A, dados_tempo+0
-    cjne    A, #0FFh, fim_contador  ; verifica se passou de 0 para 255 (isso tem q verificar melhor)
+    cjne    A, #0FFh, fim_contador
     
-    ; se passou, ajusta para 9 e decrementa a dezezen e verifica
     mov     dados_tempo+0, #9
     dec     dados_tempo+1
     mov     A, dados_tempo+1
     cjne    A, #0FFh, fim_contador
     
-    ; arruma a dezena e decrementa centecentena (testar separadoooo)
     mov     dados_tempo+1, #9
     dec     dados_tempo+2
     mov     A, dados_tempo+2
     cjne    A, #0FFh, fim_contador
     
-    ; arruma centena e decrementa milhar
     mov     dados_tempo+2, #9
     dec     dados_tempo+3
 
@@ -284,17 +285,15 @@ fim_contador:
     pop     acc
     ret
 
-;delays
 espera_1s:
     mov     TMOD, #01h
-    mov     TH0, #0FFh    ; mantido como estava (não mudei o timer)
+    mov     TH0, #0FFh
     mov     TL0, #084h
     setb    TR0
 
 aguarda:
     jnb     TF0, aguarda
     clr     TF0
-    ret                   ; removi o setb led_emerg que causava o piscar
-
-; fimmmmm
-    end
+    ret
+; fimmmm
+end
