@@ -67,6 +67,9 @@ gh repo clone nailasuely/sistemas-embarcados-semaforo
 
 ![---](https://github.com/nailasuely/task05-clock/blob/main/src/prancheta.png)
 
+## 🧪 Testes
+
+Demonstração em vídeo [aqui](https://youtu.be/UFglGplZERQ)
 
 ## 🙋‍♀️ Autoras
 
